@@ -20,7 +20,7 @@ spark.sparkContext.setLogLevel("WARN")
 
 # Producer: each customer becomes one JSON message.
 customers = spark.createDataFrame(test)
-(customers.select(F.to_json(F.struct(*customers.columns)).alias("value"))
+(customers.select(F.to_json(F.struct("*")).alias("value"))
     .write.format("kafka").option("kafka.bootstrap.servers", KAFKA).option("topic", topic).save())
 
 
@@ -39,10 +39,9 @@ def score(batches):
     .trigger(availableNow=True).start().awaitTermination())
 
 got = spark.read.parquet(out).toPandas().sort_values("id").reset_index(drop=True)
-want = pd.DataFrame({"id": test["id"], "score": model.predict_proba(features(test))[:, 1]})
-want = want.sort_values("id").reset_index(drop=True)
+want = pd.DataFrame({"id": test["id"], "score": model.predict_proba(features(test))[:, 1]}).sort_values("id").reset_index(drop=True)
 
-assert got["id"].is_unique and got["id"].equals(want["id"]), "every customer scored exactly once"
+assert got["id"].equals(want["id"]), "every customer scored exactly once"
 diff = (got["score"] - want["score"]).abs().max()
 assert diff < 1e-12, f"stream and batch disagree by {diff}"
 print(f"{len(got):,} customers streamed through Kafka; max |stream - batch| = {diff:.1e}")

@@ -63,7 +63,7 @@ The test set is used only for the final numbers. Nothing is tuned on it.
 - **The data is a table of mixed columns:** binary flags, an ordinal (vehicle age), skewed amounts (premium) and codes. Boosted trees are the standard first choice for this. They pick up non-linear effects and interactions (for example, customers who already have car insurance almost never buy) without hand-built features.
 - **No scaling is needed.** Trees split on thresholds, so a premium of 540,165 next to an age of 20 is not a problem.
 - **Native categorical splits.** Region (53 values) and channel (155) are split as categories directly. The alternatives are worse: one-hot encoding adds 208 columns, and treating the codes as numbers would be wrong.
-- **Size.** 266,776 rows × 10 columns fits in memory. The histogram method buckets each feature into at most 255 bins. All of `lab.py`, which is two model fits plus the isolation forest, runs in about a minute on 4 CPUs. Training does not need Spark.
+- **Size.** 266,776 rows × 10 columns fits in memory. The histogram method buckets each feature into at most 255 bins. All of `lab.py`, which is two boosted fits, the baseline and the isolation forest, runs in about a minute on 4 CPUs. Training does not need Spark.
 
 **Why scikit-learn's version over LightGBM or XGBoost:** it is the same family of algorithm (scikit-learn's version is modelled on LightGBM), and it comes with scikit-learn, so there is no extra dependency. The saved model is one `joblib` file that loads unchanged inside Spark's Python workers.
 
@@ -84,21 +84,31 @@ The test set is used only for the final numbers. Nothing is tuned on it.
 **What was *not* done, plainly:**
 - no hyperparameter tuning;
 - no cross-validation (one split);
-- no comparison against another model (no logistic-regression baseline);
+- only one comparison: a logistic-regression baseline (section 3). No other model families were tried;
 - no calibration check;
 - no threshold tuning.
 
-So this README shows how a sensible default model performs and how evaluation mistakes distort it. It does not claim this is the best model for the data.
+So this README shows how a sensible default model performs against a simple baseline, and how evaluation mistakes distort it. It does not claim this is the best model for the data.
+
+### Baseline: is the boosted model worth it?
+
+A logistic regression on the same 10 features and the same split:
+- region and channel one-hot encoded (208 columns);
+- the other 8 features standardised;
+- scikit-learn defaults otherwise (L2 penalty, `C=1`), `max_iter=1000`.
+
+It's the simplest serious alternative: linear, fast, and easy to explain.
 
 ---
 
 ## 3. Results: the honest evaluation and two mistakes
 
-`lab.py` scores the same kind of model three ways and prints this table:
+`lab.py` prints this table. The first row is the boosted model evaluated honestly. The second is the baseline on the same test set. The last two are the boosted model evaluated with each mistake.
 
 | protocol | rows | buy rate | ROC AUC | PR AUC | precision@0.5 | recall@0.5 | precision, top 10% |
 |---|---|---|---|---|---|---|---|
 | honest | 114,333 | 0.123 | 0.858 | 0.371 | 0.471 | 0.003 | 0.398 |
+| baseline: logistic regression | 114,333 | 0.123 | 0.850 | 0.336 | 0.333 | 0.002 | 0.361 |
 | A: outliers dropped from test | 63,862 | 0.143 | 0.838 | 0.370 | 0.432 | 0.002 | 0.393 |
 | B: oversampled before split | 200,640 | 0.500 | 0.863 | 0.808 | 0.743 | 0.936 | 0.850 |
 
@@ -114,6 +124,18 @@ So this README shows how a sensible default model performs and how evaluation mi
 - **The ranking is good:** ROC AUC 0.858.
 - **The 0.5 cut-off is useless here.** Only **87** of 114,333 test customers score 0.5 or more. 41 of them buy, which reaches 41 of the 14,013 buyers (recall 0.003). With a 12% buy rate, few customers are ever more likely than not to buy.
 - **Use the ranking instead.** Calling the top 10% means **11,433 calls**, everyone scoring at least 0.352. **4,555 of them buy (39.8%)**, against 12.3% for random calls, which is **3.2×**. Those 10% of calls reach **32.5% of all buyers**.
+
+### Baseline vs boosted model
+
+The boosted trees win on every column, **but not by much**:
+
+| | baseline | boosted |
+|---|---|---|
+| ROC AUC | 0.850 | 0.858 |
+| PR AUC | 0.336 | 0.371 |
+| buyers per top-10% call | 36.1% | 39.8% |
+
+On 11,433 calls that is roughly 420 more buyers, about 10% more. So most of the signal is already reachable with a linear model. The trees add a real but modest gain, probably from interactions a linear model can't express. If explainability mattered more than that 10%, the logistic regression would be a defensible choice.
 
 ### Mistake A: dropping "outliers" from the test set
 
@@ -207,7 +229,7 @@ Training and streaming run in the **same image**, so the model file is always lo
 
 | file | what's in it |
 |---|---|
-| `lab.py` | `features()`, the model, the three evaluations, the table, saving the model |
+| `lab.py` | `features()`, the model, the baseline, the evaluations, the table, saving the model |
 | `stream.py` | Kafka producer, streaming query, scoring, parity check |
 | `Dockerfile` | the Spark image plus the three pinned Python libraries and the Kafka connector setting |
 | `docker-compose.yml` | the Kafka broker and the lab container (which shares Kafka's network, so the broker is `localhost:9092`) |

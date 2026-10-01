@@ -4,9 +4,13 @@ import zipfile
 import joblib
 import numpy as np
 import pandas as pd
+from sklearn.compose import make_column_transformer
 from sklearn.ensemble import HistGradientBoostingClassifier, IsolationForest
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import average_precision_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 SEED = 0
 
@@ -52,6 +56,12 @@ if __name__ == "__main__":
     train, test = train_test_split(df, test_size=0.3, stratify=df["Response"], random_state=SEED)
     model = fit(train)
 
+    # Baseline: a linear model on the same features, codes one-hot encoded, everything else scaled.
+    baseline = make_pipeline(
+        make_column_transformer((OneHotEncoder(handle_unknown="ignore"), ["region", "channel"]), remainder=StandardScaler()),
+        LogisticRegression(max_iter=1000),
+    ).fit(features(train), train["Response"])
+
     # Mistake A: drop "outliers" from the test set. A real customer can't be dropped at scoring time.
     iso = IsolationForest(random_state=SEED).fit(features(train))
     filtered = test[iso.predict(features(test)) == 1]
@@ -63,6 +73,7 @@ if __name__ == "__main__":
 
     rows = {
         "honest": evaluate(model, test),
+        "baseline: logistic regression": evaluate(baseline, test),
         "A: outliers dropped from test": evaluate(model, filtered),
         "B: oversampled before split": evaluate(fit(train_b), test_b),
     }
