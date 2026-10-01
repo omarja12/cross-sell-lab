@@ -1,0 +1,9 @@
+services:
+  kafka:
+    image: apache/kafka:4.3.1
+    environment: {KAFKA_HEAP_OPTS: "-Xmx256m -Xms256m"}
+  lab:
+    build: .
+    network_mode: service:kafka  # shares kafka's network, so the broker is localhost:9092
+    volumes: [".:/lab"]
+    depends_on: [kafka]
