@@ -52,7 +52,7 @@ Train/serve skew is the usual way a model that tested well goes wrong in product
 Needs Docker and about 3 GB of free memory.
 
 ```
-curl -L -o data/raw.zip https://www.kaggle.com/api/v1/datasets/download/anmolkumar/health-insurance-cross-sell-prediction
+curl -L --create-dirs -o data/raw.zip https://www.kaggle.com/api/v1/datasets/download/anmolkumar/health-insurance-cross-sell-prediction
 docker compose run --rm lab python3 lab.py        # ~1 min: the table above, then saves the model
 docker compose run --rm lab spark-submit stream.py  # ~3 min: Kafka -> Spark -> parity check
 ```
